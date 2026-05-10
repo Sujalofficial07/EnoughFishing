@@ -1,0 +1,62 @@
+buildscript {
+    repositories {
+        maven { name = 'forge'; url = 'https://files.minecraftforge.net/maven' }
+        maven { name = 'sonatype'; url = 'https://oss.sonatype.org/content/repositories/snapshots/' }
+        mavenCentral()
+    }
+    dependencies {
+        classpath 'net.minecraftforge.gradle:ForgeGradle:2.1-SNAPSHOT'
+    }
+}
+
+apply plugin: 'net.minecraftforge.gradle.forge'
+
+version      = project.mod_version
+group        = 'com.mef.enoughfishing'
+archivesBaseName = 'EnoughFishing'
+
+sourceCompatibility = JavaVersion.VERSION_1_8
+targetCompatibility = JavaVersion.VERSION_1_8
+
+minecraft {
+    version        = "${project.mc_version}-${project.forge_version}"
+    runDir         = 'run'
+    mappings       = project.mcp_mappings
+    makeObfSourceJar = false
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    // No external runtime deps; Forge is provided by the toolchain.
+}
+
+processResources {
+    inputs.property 'version',   project.mod_version
+    inputs.property 'mcversion', project.mc_version
+
+    from(sourceSets.main.resources.srcDirs) {
+        include 'mcmod.info'
+        expand 'version': project.mod_version, 'mcversion': project.mc_version
+    }
+    from(sourceSets.main.resources.srcDirs) {
+        exclude 'mcmod.info'
+    }
+}
+
+jar {
+    manifest {
+        attributes(
+            'FMLCorePluginContainsFMLMod': 'true',
+            'Implementation-Version': project.mod_version
+        )
+    }
+}
+
+// Reproducible builds: strip timestamps from zip entries
+tasks.withType(Jar) {
+    preserveFileTimestamps = false
+    reproducibleFileOrder  = true
+}

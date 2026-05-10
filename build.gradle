@@ -55,7 +55,3 @@ jar {
     }
 }
 
-// Reproducible builds: strip timestamps from zip entries
-tasks.withType(Jar) {
-    reproducibleFileOrder  = true
-}

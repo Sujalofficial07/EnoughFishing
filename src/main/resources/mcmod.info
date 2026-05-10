@@ -1,0 +1,16 @@
+[
+  {
+    "modid":       "enoughfishing",
+    "name":        "Enough Fishing",
+    "description": "Advanced fishing assistant for Fakepixel Skyblock. Precision HUD timer, particle-based bite alerts, and a full config GUI.",
+    "version":     "${version}",
+    "mcversion":   "${mcversion}",
+    "url":         "https://github.com/sujalofficial07/enoughfishing",
+    "updateUrl":   "",
+    "authorList":  ["sujal,claude"],
+    "credits":     "Built for self for better fishing in Fakepixel Skyblock.",
+    "logoFile":    "",
+    "screenshots": [],
+    "dependencies": []
+  }
+]

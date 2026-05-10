@@ -57,6 +57,5 @@ jar {
 
 // Reproducible builds: strip timestamps from zip entries
 tasks.withType(Jar) {
-    preserveFileTimestamps = false
     reproducibleFileOrder  = true
 }

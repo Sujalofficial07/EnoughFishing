@@ -1,0 +1,67 @@
+name: Build Mod
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Set up JDK 8
+        uses: actions/setup-java@v3
+        with:
+          java-version: '8'
+          distribution: 'temurin'
+
+      - name: Cache Gradle packages
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
+
+      - name: Cache ForgeGradle workspace
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.gradle/caches/minecraft
+            .gradle/
+          key: ${{ runner.os }}-forgeworkspace-${{ hashFiles('build.gradle', 'gradle.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-forgeworkspace-
+
+      - name: Grant execute permission to gradlew
+        run: chmod +x gradlew
+
+      - name: Setup ForgeGradle decompile workspace
+        run: ./gradlew setupDecompWorkspace --no-daemon --stacktrace
+
+      - name: Build mod jar
+        run: ./gradlew build --no-daemon --stacktrace
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: EnoughFishing-${{ github.ref_name }}-${{ github.sha }}
+          path: build/libs/EnoughFishing-*.jar
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Create release on tag push
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v1
+        with:
+          files: build/libs/EnoughFishing-*.jar
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

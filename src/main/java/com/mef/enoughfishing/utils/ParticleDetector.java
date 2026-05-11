@@ -1,6 +1,7 @@
 package com.mef.enoughfishing.utils;
 
 import com.mef.enoughfishing.EnoughFishing;
+import com.mef.enoughfishing.core.Config;
 import com.mef.enoughfishing.core.FishingTracker;
 import io.netty.channel.ChannelDuplexHandler;
 import io.netty.channel.ChannelHandlerContext;
@@ -10,17 +11,17 @@ import net.minecraft.network.play.server.S2APacketParticles;
 import net.minecraft.util.EnumParticleTypes;
 
 /**
- * Netty duplex handler injected into the client-side pipeline by
- * {@link com.mef.enoughfishing.events.FishingEventHandler}.
+ * Netty handler that intercepts WATER_WAKE particle packets and classifies
+ * them into two zones relative to the fishing bobber:
  *
- * <p>Intercepts {@link S2APacketParticles} packets and fires
- * {@link FishingTracker#onParticleDetected()} when a
- * {@link EnumParticleTypes#WATER_WAKE} particle spawns within the
- * configured sensitivity radius of the player's bobber.</p>
+ *   Outer zone  (approaching): particle within outerRadius = sensitivity + 1.5 blocks
+ *   Inner zone  (arrived):     particle within innerRadius = sensitivity × 0.5 blocks
  *
- * <p>All packet handling occurs on Netty's IO thread. The actual tracker
- * mutation is dispatched to the main Minecraft thread via
- * {@link Minecraft#addScheduledTask(Runnable)} to maintain thread-safety.</p>
+ * The outer zone fires onApproachingDetected() → yellow ! on the label.
+ * The inner zone fires onArrivedDetected()     → red !! + screen flash.
+ *
+ * Both calls are dispatched to the main thread via addScheduledTask so
+ * FishingTracker state is only mutated on the main thread.
  */
 public final class ParticleDetector extends ChannelDuplexHandler {
 
@@ -28,18 +29,15 @@ public final class ParticleDetector extends ChannelDuplexHandler {
     public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
         try {
             if (msg instanceof S2APacketParticles) {
-                handleParticle((S2APacketParticles) msg);
+                checkParticle((S2APacketParticles) msg);
             }
         } catch (Exception e) {
-            // Never swallow the packet; re-throw after logging.
             EnoughFishing.LOG.warn("[MEF] ParticleDetector error: {}", e.getMessage());
         }
-        // Always pass the packet down the pipeline.
         super.channelRead(ctx, msg);
     }
 
-    private void handleParticle(S2APacketParticles pkt) {
-        // Fast-path: only care about WATER_WAKE
+    private void checkParticle(S2APacketParticles pkt) {
         if (pkt.getParticleType() != EnumParticleTypes.WATER_WAKE) return;
 
         Minecraft mc = Minecraft.getMinecraft();
@@ -48,26 +46,31 @@ public final class ParticleDetector extends ChannelDuplexHandler {
         EntityFishHook hook = mc.thePlayer.fishEntity;
         if (hook == null) return;
 
-        // Config read is inherently safe — only primitives, no synchronization needed.
-        float sensitivity = EnoughFishing.INSTANCE.getConfig().getParticleSensitivity();
-        double radSq      = sensitivity * sensitivity;
+        Config cfg = EnoughFishing.INSTANCE.getConfig();
+        if (!cfg.isParticleAlertsEnabled()) return;
 
         double dx = pkt.getXCoordinate() - hook.posX;
         double dy = pkt.getYCoordinate() - hook.posY;
         double dz = pkt.getZCoordinate() - hook.posZ;
+        double distSq = dx * dx + dy * dy + dz * dz;
 
-        if (dx * dx + dy * dy + dz * dz > radSq) return;
+        float  sens       = cfg.getParticleSensitivity();
+        double outerRadSq = (sens + 1.5) * (sens + 1.5);
+        double innerRadSq = (sens * 0.5 + 0.3) * (sens * 0.5 + 0.3);
 
-        // Dispatch to main thread — mutating tracker or calling playSound off the
-        // main thread would cause race conditions or crash in SoundManager.
-        mc.addScheduledTask(() -> {
-            FishingTracker.INSTANCE.onParticleDetected();
+        if (distSq > outerRadSq) return; // outside both zones
 
-            if (EnoughFishing.INSTANCE.getConfig().isSoundAlertEnabled()
-                    && mc.thePlayer != null) {
-                // "random.orb" is the XP pickup sound — a subtle, distinct ping.
-                mc.thePlayer.playSound("random.orb", 0.6f, 1.4f);
-            }
-        });
+        if (distSq <= innerRadSq) {
+            // ── ARRIVED ──────────────────────────────────────────────────────
+            mc.addScheduledTask(() -> {
+                FishingTracker.INSTANCE.onArrivedDetected();
+                if (cfg.isSoundAlertEnabled() && mc.thePlayer != null) {
+                    mc.thePlayer.playSound("random.orb", 0.65f, 1.4f);
+                }
+            });
+        } else {
+            // ── APPROACHING ───────────────────────────────────────────────────
+            mc.addScheduledTask(FishingTracker.INSTANCE::onApproachingDetected);
+        }
     }
 }

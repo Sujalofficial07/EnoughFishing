@@ -7,14 +7,14 @@ import net.minecraft.client.renderer.vertex.DefaultVertexFormats;
 import org.lwjgl.opengl.GL11;
 
 /**
- * Stateless GL drawing utilities. Zero heap allocations. All methods restore
- * GL state to "blend off, texture on, color white" on exit.
+ * Zero-allocation GL drawing utilities.
+ * Every method restores GL state to: blend off, texture on, color white.
  */
 public final class RenderUtils {
 
     private RenderUtils() {}
 
-    // ── Core rect ─────────────────────────────────────────────────────────────
+    // ── Filled rect ───────────────────────────────────────────────────────────
 
     public static void drawRect(double x1, double y1, double x2, double y2, int color) {
         float a = ((color >> 24) & 0xFF) / 255f;
@@ -41,34 +41,61 @@ public final class RenderUtils {
         GlStateManager.color(1f, 1f, 1f, 1f);
     }
 
-    // ── Neon glow border ──────────────────────────────────────────────────────
+    // ── 1-pixel outline ───────────────────────────────────────────────────────
+
+    public static void drawBorder(double x, double y, double x2, double y2, int color) {
+        drawRect(x,      y,      x2,     y  + 1, color);
+        drawRect(x,      y2 - 1, x2,     y2,     color);
+        drawRect(x,      y,      x  + 1, y2,     color);
+        drawRect(x2 - 1, y,      x2,     y2,     color);
+    }
+
+    // ── Pill (stadium) shape — for toggle switches ────────────────────────────
 
     /**
-     * Draws a multi-layer glow border around a rectangle to simulate bloom.
-     *
-     * @param glowColor packed RGB color (no alpha — alpha is computed per layer)
+     * Draws a filled pill / stadium shape using three overlapping rects that
+     * produce 2-pixel corner cuts, giving a clean rounded appearance at
+     * the small sizes used by toggle switches (height ≤ 20px).
      */
-    public static void drawGlowBorder(int x, int y, int x2, int y2, int glowColor) {
-        int rgb = glowColor & 0x00FFFFFF;
-        // Layer 3 — outermost, very faint
-        drawRect(x - 3, y - 3, x2 + 3, y2 + 3, 0x18000000 | rgb);
-        // Layer 2 — mid glow
-        drawRect(x - 2, y - 2, x2 + 2, y2 + 2, 0x35000000 | rgb);
-        // Layer 1 — crisp inner border
-        drawRect(x - 1, y - 1, x2 + 1, y2 + 1, 0x70000000 | rgb);
-        // Solid 1px border
-        drawRect(x,     y,     x2,     y2,     0xFF000000 | rgb);
+    public static void drawPill(double x, double y, double w, double h, int color) {
+        drawRect(x + 2, y,     x + w - 2, y + h,     color);
+        drawRect(x + 1, y + 1, x + w - 1, y + h - 1, color);
+        drawRect(x,     y + 2, x + w,     y + h - 2,  color);
     }
 
     /**
-     * Draws only the 1-pixel outline of a rectangle (4 edge rects).
-     * Cheaper than drawGlowBorder when bloom is not needed.
+     * Draws just the 1px border of a pill outline.
+     * Used to add a slightly darker edge to toggle knobs and pill backgrounds.
      */
-    public static void drawBorder(int x, int y, int x2, int y2, int color) {
-        drawRect(x,      y,      x2,     y  + 1, color); // top
-        drawRect(x,      y2 - 1, x2,     y2,     color); // bottom
-        drawRect(x,      y,      x  + 1, y2,     color); // left
-        drawRect(x2 - 1, y,      x2,     y2,     color); // right
+    public static void drawPillBorder(double x, double y, double w, double h, int color) {
+        // Top & bottom edges (inset 2px from ends)
+        drawRect(x + 2, y,         x + w - 2, y + 1,         color);
+        drawRect(x + 2, y + h - 1, x + w - 2, y + h,         color);
+        // Left & right edges (inset 2px from top/bottom)
+        drawRect(x,         y + 2, x + 1,         y + h - 2, color);
+        drawRect(x + w - 1, y + 2, x + w,         y + h - 2, color);
+        // Corner pixels
+        drawRect(x + 1, y + 1,         x + 2,     y + 2,         color);
+        drawRect(x + w - 2, y + 1,     x + w - 1, y + 2,         color);
+        drawRect(x + 1, y + h - 2,     x + 2,     y + h - 1,     color);
+        drawRect(x + w - 2, y + h - 2, x + w - 1, y + h - 1,     color);
+    }
+
+    // ── Approximate circle (for slider knobs / toggle knobs) ──────────────────
+
+    /**
+     * Draws a filled approximate circle of diameter {@code d} with top-left at
+     * (x, y). Uses two overlapping rects (horizontal + vertical) to produce an
+     * octagon that reads as a circle at the sizes used in this mod (8-14px).
+     */
+    public static void drawCircle(double x, double y, double d, int color) {
+        double cx = x + d / 2.0;
+        double cy = y + d / 2.0;
+        double r  = d / 2.0;
+        // Horizontal band (full width, 70% height)
+        drawRect(cx - r, cy - r * 0.7, cx + r, cy + r * 0.7, color);
+        // Vertical band (70% width, full height)
+        drawRect(cx - r * 0.7, cy - r, cx + r * 0.7, cy + r, color);
     }
 
     // ── Fullscreen overlay ────────────────────────────────────────────────────

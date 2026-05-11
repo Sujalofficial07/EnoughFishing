@@ -5,6 +5,7 @@ import com.mef.enoughfishing.core.Config;
 import com.mef.enoughfishing.core.FishingTracker;
 import com.mef.enoughfishing.events.FishingEventHandler;
 import com.mef.enoughfishing.events.RenderEventHandler;
+import com.mef.enoughfishing.events.RenderWorldHandler;
 import net.minecraftforge.client.ClientCommandHandler;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.fml.common.Mod;
@@ -44,8 +45,9 @@ public class EnoughFishing {
     public void init(FMLInitializationEvent event) {
         MinecraftForge.EVENT_BUS.register(new FishingEventHandler());
         MinecraftForge.EVENT_BUS.register(new RenderEventHandler());
+        MinecraftForge.EVENT_BUS.register(new RenderWorldHandler()); // ← floating bobber timer
         ClientCommandHandler.instance.registerCommand(new CommandMEF());
-        LOG.info("[{}] Initialized. Happy fishing!", MOD_NAME);
+        LOG.info("[{}] Initialized — Happy fishing!", MOD_NAME);
     }
 
     public Config         getConfig()  { return config;  }

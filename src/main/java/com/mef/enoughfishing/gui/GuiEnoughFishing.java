@@ -9,61 +9,64 @@ import com.mef.enoughfishing.utils.ColorUtils;
 import com.mef.enoughfishing.utils.RenderUtils;
 import net.minecraft.client.gui.GuiButton;
 import net.minecraft.client.gui.GuiScreen;
-import net.minecraft.client.renderer.GlStateManager;
 
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Main configuration screen, opened via {@code /mef}.
+ * Configuration screen — neon green / purple professional theme.
  *
- * <p>Layout (fixed pixel positions set in {@link #initGui()}):</p>
- * <pre>
- * ┌───────────────────────────────────────────┐  panelY
- * │  ≡ Enough Fishing  v1.0.0                 │  title bar 24px
- * ├───── ⏱ Timer ────────────────────────────┤  sectionY[0]
- * │  [✔ Timer]    [✔ Show MS]                 │
- * │  R ─────────────────── 255                │
- * │  G ─────────────────── 128                │
- * │  B ─────────────────── 0                  │
- * │  Opacity ────────────── 255               │
- * ├───── 🔔 Alerts ────────────────────────────│  sectionY[1]
- * │  [✔ Particle Alerts]   [✔ Sound]          │
- * │  [✔ Screen Flash]                         │
- * │  R / G / B sliders (alert color)          │
- * │  Sensitivity ─────────── 20               │
- * ├───── 🖥 Display ────────────────────────────│  sectionY[2]
- * │  [✔ Show Cast Count]                      │
- * ├───────────────────────────────────────────┤
- * │  [Save]   [Reset Stats]   [Close]         │
- * └───────────────────────────────────────────┘
- * </pre>
+ * Layout (top-down):
+ *  ┌──────────────────── TITLE ────────────────────┐
+ *  │  ◈ ENOUGH FISHING  v1.0.0                     │
+ *  ╠══════════════ ⏱ TIMER ════════════════════════╣
+ *  │  [✔ Timer]  [✔ Show ms]  [✔ Rainbow]          │
+ *  │  R ───────────────  G ───────────────          │
+ *  │  B ───────────────  Opacity ─────────          │
+ *  │  ████ color swatch                             │
+ *  ╠══════════════ 🔔 ALERTS ══════════════════════╣
+ *  │  [✔ Particle Alerts]  [✔ Sound]  [✔ Flash]    │
+ *  │  R / G / B ───────  Sensitivity ───────        │
+ *  │  ████ color swatch                             │
+ *  ╠══════════════ 🖥 DISPLAY ══════════════════════╣
+ *  │  [✔ Show Cast Count]                           │
+ *  ╠═══════════════════════════════════════════════╣
+ *  │  [ §a SAVE ]    [ §e RESET STATS ]  [ §c X ]  │
+ *  └───────────────────────────────────────────────┘
  */
 public final class GuiEnoughFishing extends GuiScreen {
 
-    // ── Layout constants ──────────────────────────────────────────────────────
-    private static final int W        = 380;
-    private static final int H        = 470;
-    private static final int PAD      = 12;
-    private static final int SLIDER_W = 220;
-    private static final int SLIDER_H = 12;
-    private static final int BTN_H    = 20;
-    private static final int BTN_W    = 150;
+    // ── Layout ────────────────────────────────────────────────────────────────
+    private static final int W        = 390;
+    private static final int H        = 505;
+    private static final int PAD      = 13;
+    private static final int SL_W     = 160;  // slider track width
+    private static final int SL_H     = 14;
+    private static final int BTN_W    = 120;
+    private static final int BTN_H    = 18;
+    private static final int COL_GAP  = 12;   // gap between two-column rows
+
+    // ── Neon palette ──────────────────────────────────────────────────────────
+    private static final int BG_OUTER    = 0xF5040310;  // near-black
+    private static final int BG_PANEL    = 0xF2130828;  // dark purple panel
+    private static final int BG_HEADER   = 0xFF090422;  // deepest purple header
+    private static final int GLOW_COLOR  = 0xFF7722BB;  // purple glow
+    private static final int SECTION_LINE= 0xFF3D1270;  // section divider
+    private static final int NEON_GREEN  = 0xFF00FF88;
+    private static final int NEON_PURPLE = 0xFF9D4EDD;
+    private static final int TXT_PRIMARY = 0xFF00FF88;  // neon green
+    private static final int TXT_SECOND  = 0xFFBB88FF;  // soft lavender
+    private static final int TXT_DIM     = 0xFF5C3B7A;
 
     // ── Button IDs ────────────────────────────────────────────────────────────
-    private static final int ID_TIMER_EN   = 10;
-    private static final int ID_SHOW_MS    = 11;
-    private static final int ID_ALERT_EN   = 12;
-    private static final int ID_SOUND      = 13;
-    private static final int ID_FLASH      = 14;
-    private static final int ID_CAST_CNT   = 15;
-    private static final int ID_SAVE       = 20;
-    private static final int ID_RESET      = 21;
-    private static final int ID_CLOSE      = 22;
+    private static final int ID_TIMER_EN  = 10, ID_SHOW_MS = 11, ID_RAINBOW = 12;
+    private static final int ID_ALERT_EN  = 13, ID_SOUND   = 14, ID_FLASH   = 15;
+    private static final int ID_CAST_CNT  = 16;
+    private static final int ID_SAVE      = 20, ID_RESET   = 21, ID_CLOSE   = 22;
 
-    // ── State ─────────────────────────────────────────────────────────────────
-    private int px, py;                    // panel top-left
+    // ── Runtime state ─────────────────────────────────────────────────────────
+    private int px, py;
     private final List<MEFSlider> sliders = new ArrayList<>();
 
     // Timer color sliders
@@ -71,9 +74,11 @@ public final class GuiEnoughFishing extends GuiScreen {
     // Alert color sliders
     private MEFSlider slAlertR, slAlertG, slAlertB, slSensitivity;
 
-    // Live color previews (packed RGB, updated every frame)
-    private int previewTimerColor;
-    private int previewAlertColor;
+    // Live color preview (packed RGB, refreshed every frame)
+    private int previewTimer, previewAlert;
+
+    // Stored Y positions for section headers (set in initGui, read in drawScreen)
+    private int ySecTimer, ySecAlerts, ySecDisplay, yBtnRow;
 
     // ── GuiScreen lifecycle ───────────────────────────────────────────────────
 
@@ -83,108 +88,218 @@ public final class GuiEnoughFishing extends GuiScreen {
         buttonList.clear();
 
         Config cfg = EnoughFishing.INSTANCE.getConfig();
-
         px = (width  - W) / 2;
         py = (height - H) / 2;
 
-        // ── TIMER SECTION ─────────────────────────────────────────────────────
-        int y = py + 32;
+        int y = py + 30;  // start below the title bar
 
-        addBtn(new ToggleButton(ID_TIMER_EN, px + PAD,           y, BTN_W, BTN_H, "Timer",   cfg.isTimerEnabled()));
-        addBtn(new ToggleButton(ID_SHOW_MS,  px + PAD + BTN_W + 8, y, BTN_W, BTN_H, "Show ms", cfg.isShowMilliseconds()));
+        // ── TIMER section ─────────────────────────────────────────────────────
+        ySecTimer = y;
+        y += 14;  // section header height
+
+        // Row 1: three toggle buttons
+        int col2 = px + PAD + BTN_W + COL_GAP;
+        int col3 = col2 + BTN_W + COL_GAP;
+        addBtn(new ToggleButton(ID_TIMER_EN, px + PAD, y, BTN_W, BTN_H, "Timer",   cfg.isTimerEnabled()));
+        addBtn(new ToggleButton(ID_SHOW_MS,  col2,     y, BTN_W, BTN_H, "Show ms", cfg.isShowMilliseconds()));
+        addBtn(new ToggleButton(ID_RAINBOW,  col3,     y, BTN_W, BTN_H, "Rainbow", cfg.isRainbowMode()));
         y += BTN_H + 10;
 
-        slTimerR = addSlider(new MEFSlider(px + PAD, y, SLIDER_W, SLIDER_H, "R", ColorUtils.getRed(cfg.getTimerColor()),   0, 255)); y += SLIDER_H + 6;
-        slTimerG = addSlider(new MEFSlider(px + PAD, y, SLIDER_W, SLIDER_H, "G", ColorUtils.getGreen(cfg.getTimerColor()), 0, 255)); y += SLIDER_H + 6;
-        slTimerB = addSlider(new MEFSlider(px + PAD, y, SLIDER_W, SLIDER_H, "B", ColorUtils.getBlue(cfg.getTimerColor()),  0, 255)); y += SLIDER_H + 6;
-        slOpacity= addSlider(new MEFSlider(px + PAD, y, SLIDER_W, SLIDER_H, "Opacity", (int)(cfg.getHudOpacity() * 255f), 0, 255)); y += SLIDER_H + 14;
+        // Row 2: R/G sliders side by side
+        int rCol = px + PAD;
+        int gCol = px + PAD + SL_W + 60 + COL_GAP;  // 60 = label space
+        slTimerR = addSlider(new MEFSlider(rCol, y, SL_W, SL_H, "R", ColorUtils.getRed(cfg.getTimerColor()),   0, 255));
+        slTimerG = addSlider(new MEFSlider(gCol, y, SL_W, SL_H, "G", ColorUtils.getGreen(cfg.getTimerColor()), 0, 255));
+        y += SL_H + 8;
 
-        // ── ALERTS SECTION ────────────────────────────────────────────────────
-        addBtn(new ToggleButton(ID_ALERT_EN, px + PAD,           y, BTN_W, BTN_H, "Particle Alerts", cfg.isParticleAlertsEnabled()));
-        addBtn(new ToggleButton(ID_SOUND,    px + PAD + BTN_W + 8, y, BTN_W, BTN_H, "Sound Alert",  cfg.isSoundAlertEnabled()));
-        y += BTN_H + 6;
+        // Row 3: B/Opacity sliders side by side
+        slTimerB  = addSlider(new MEFSlider(rCol, y, SL_W, SL_H, "B",       ColorUtils.getBlue(cfg.getTimerColor()),   0, 255));
+        slOpacity = addSlider(new MEFSlider(gCol, y, SL_W, SL_H, "Opacity", (int)(cfg.getHudOpacity() * 255f), 0, 255));
+        y += SL_H + 14;
 
-        addBtn(new ToggleButton(ID_FLASH, px + PAD, y, BTN_W, BTN_H, "Screen Flash", cfg.isScreenFlashEnabled()));
+        // ── ALERTS section ────────────────────────────────────────────────────
+        ySecAlerts = y;
+        y += 14;
+
+        addBtn(new ToggleButton(ID_ALERT_EN, px + PAD, y, BTN_W, BTN_H, "Alerts",      cfg.isParticleAlertsEnabled()));
+        addBtn(new ToggleButton(ID_SOUND,    col2,     y, BTN_W, BTN_H, "Sound",        cfg.isSoundAlertEnabled()));
+        addBtn(new ToggleButton(ID_FLASH,    col3,     y, BTN_W, BTN_H, "Screen Flash", cfg.isScreenFlashEnabled()));
         y += BTN_H + 10;
 
-        slAlertR     = addSlider(new MEFSlider(px + PAD, y, SLIDER_W, SLIDER_H, "R", ColorUtils.getRed(cfg.getAlertColor()),   0, 255)); y += SLIDER_H + 6;
-        slAlertG     = addSlider(new MEFSlider(px + PAD, y, SLIDER_W, SLIDER_H, "G", ColorUtils.getGreen(cfg.getAlertColor()), 0, 255)); y += SLIDER_H + 6;
-        slAlertB     = addSlider(new MEFSlider(px + PAD, y, SLIDER_W, SLIDER_H, "B", ColorUtils.getBlue(cfg.getAlertColor()),  0, 255)); y += SLIDER_H + 6;
-        // Sensitivity: 1.0–5.0 stored as 10–50 for integer precision
-        slSensitivity= addSlider(new MEFSlider(px + PAD, y, SLIDER_W, SLIDER_H, "Sensitivity/10", (int)(cfg.getParticleSensitivity() * 10f), 10, 50)); y += SLIDER_H + 14;
+        slAlertR      = addSlider(new MEFSlider(rCol, y, SL_W, SL_H, "R", ColorUtils.getRed(cfg.getAlertColor()),   0, 255));
+        slAlertG      = addSlider(new MEFSlider(gCol, y, SL_W, SL_H, "G", ColorUtils.getGreen(cfg.getAlertColor()), 0, 255));
+        y += SL_H + 8;
 
-        // ── DISPLAY SECTION ───────────────────────────────────────────────────
-        addBtn(new ToggleButton(ID_CAST_CNT, px + PAD, y, BTN_W, BTN_H, "Show Cast Count", cfg.isShowCastCount()));
+        slAlertB      = addSlider(new MEFSlider(rCol, y, SL_W, SL_H, "B",           ColorUtils.getBlue(cfg.getAlertColor()),             0, 255));
+        slSensitivity = addSlider(new MEFSlider(gCol, y, SL_W, SL_H, "Radius×10",   (int)(cfg.getParticleSensitivity() * 10f), 10, 50));
+        y += SL_H + 14;
 
-        // ── BOTTOM BUTTONS ────────────────────────────────────────────────────
-        int bottomY = py + H - BTN_H - PAD;
-        addBtn(new GuiButton(ID_SAVE,  px + PAD,            bottomY, 100, BTN_H, "§aSave"));
-        addBtn(new GuiButton(ID_RESET, px + PAD + 108,      bottomY, 120, BTN_H, "§eReset Stats"));
-        addBtn(new GuiButton(ID_CLOSE, px + W - 110,        bottomY, 100, BTN_H, "§cClose"));
+        // ── DISPLAY section ───────────────────────────────────────────────────
+        ySecDisplay = y;
+        y += 14;
+
+        addBtn(new ToggleButton(ID_CAST_CNT, px + PAD, y, BTN_W, BTN_H, "Cast Count", cfg.isShowCastCount()));
+        y += BTN_H + 14;
+
+        // ── Action buttons ────────────────────────────────────────────────────
+        yBtnRow = y;
+        int bw = 105;
+        addBtn(new GuiButton(ID_SAVE,  px + PAD,               y, bw, 22, "SAVE"));
+        addBtn(new GuiButton(ID_RESET, px + PAD + bw + 8,      y, bw, 22, "RESET STATS"));
+        addBtn(new GuiButton(ID_CLOSE, px + W - bw - PAD,      y, bw, 22, "CLOSE"));
 
         refreshColorPreviews();
     }
 
+    // ── drawScreen ────────────────────────────────────────────────────────────
+
     @Override
-    public void drawScreen(int mouseX, int mouseY, float partialTicks) {
+    public void drawScreen(int mx, int my, float pt) {
         drawDefaultBackground();
+        drawPanel();
+        drawSections();
+        drawColorSwatches();
 
-        // ── Panel ─────────────────────────────────────────────────────────────
-        RenderUtils.drawRect(px,      py,      px + W,      py + H,      0xE5101018);
-        RenderUtils.drawRect(px,      py,      px + W,      py + 24,     0xFF1A1A30);
-        RenderUtils.drawRect(px,      py + 24, px + W,      py + 25,     0xFF3333AA);
+        for (MEFSlider sl : sliders) sl.draw(fontRendererObj, mx, my);
 
-        drawCenteredString(fontRendererObj,
-            "§b§lEnough Fishing  §8v" + EnoughFishing.VERSION,
-            px + W / 2, py + 8, 0xFFFFFF);
+        // Buttons on top of everything else
+        super.drawScreen(mx, my, pt);
 
-        // ── Section headers ───────────────────────────────────────────────────
-        int y = py + 30;
-        drawSection("⏱ Timer",   y);  y += BTN_H + 10 + (SLIDER_H + 6) * 3 + SLIDER_H + 14 + 6;
-        drawSection("🔔 Alerts",  y);  y += BTN_H + 6 + BTN_H + 10 + (SLIDER_H + 6) * 3 + SLIDER_H + 14 + 6;
-        drawSection("🖥 Display", y);
-
-        // ── Color preview swatches ────────────────────────────────────────────
-        int swatchX = px + PAD + SLIDER_W + 55;
-        int timerSwatchY = py + 32 + BTN_H + 10;
-        int alertSwatchY = py + 32 + BTN_H + 10 + (SLIDER_H + 6) * 3 + SLIDER_H + 14 + (BTN_H + 6) * 2 + BTN_H + 10;
-
-        drawColorSwatch(previewTimerColor, swatchX, timerSwatchY, 20, (SLIDER_H + 6) * 3 + SLIDER_H);
-        drawColorSwatch(previewAlertColor, swatchX, alertSwatchY,  20, (SLIDER_H + 6) * 3 + SLIDER_H);
-
-        // ── Sliders ───────────────────────────────────────────────────────────
-        for (MEFSlider sl : sliders) {
-            sl.draw(fontRendererObj, mouseX, mouseY);
-        }
-
-        // ── Buttons (must come after custom elements so they render on top) ──
-        super.drawScreen(mouseX, mouseY, partialTicks);
+        // Action button neon tint overlays (drawn after super so they're on top)
+        tintActionButton(ID_SAVE,  NEON_GREEN,  mx, my);
+        tintActionButton(ID_RESET, 0xFFFFCC00,  mx, my);
+        tintActionButton(ID_CLOSE, 0xFFFF4455,  mx, my);
 
         refreshColorPreviews();
     }
 
-    // ── Mouse events ──────────────────────────────────────────────────────────
+    // ── Panel ─────────────────────────────────────────────────────────────────
 
-    @Override
-    protected void mouseClicked(int mouseX, int mouseY, int button) throws IOException {
-        super.mouseClicked(mouseX, mouseY, button);
-        if (button == 0) {
-            for (MEFSlider sl : sliders) sl.mousePressed(mouseX, mouseY);
+    private void drawPanel() {
+        // Multi-layer glow border (outer → inner)
+        RenderUtils.drawRect(px - 4, py - 4, px + W + 4, py + H + 4, 0x10B350FF);
+        RenderUtils.drawRect(px - 3, py - 3, px + W + 3, py + H + 3, 0x20B350FF);
+        RenderUtils.drawRect(px - 2, py - 2, px + W + 2, py + H + 2, 0x409D4EDD);
+        RenderUtils.drawRect(px - 1, py - 1, px + W + 1, py + H + 1, 0x70852BBB);
+
+        // Panel fill
+        RenderUtils.drawRect(px, py, px + W, py + H, BG_PANEL);
+
+        // Title bar
+        RenderUtils.drawRect(px, py, px + W, py + 26, BG_HEADER);
+
+        // Title bar bottom glow line
+        RenderUtils.drawRect(px, py + 26, px + W, py + 27, GLOW_COLOR);
+        RenderUtils.drawRect(px, py + 27, px + W, py + 28, GLOW_COLOR & 0x55FFFFFF);
+
+        // Title text
+        String title = "\u25c8  ENOUGH FISHING  \u25c8";
+        int    tw    = fontRendererObj.getStringWidth(title);
+        fontRendererObj.drawStringWithShadow(title, px + (W - tw) / 2f, py + 9f, NEON_GREEN);
+
+        // Version tag (top right)
+        String ver = "v" + EnoughFishing.VERSION;
+        fontRendererObj.drawStringWithShadow(ver, px + W - fontRendererObj.getStringWidth(ver) - PAD, py + 9f, TXT_DIM);
+    }
+
+    // ── Section headers ───────────────────────────────────────────────────────
+
+    private void drawSections() {
+        drawSectionHeader("\u231a TIMER",   ySecTimer);
+        drawSectionHeader("\u25ce ALERTS",  ySecAlerts);
+        drawSectionHeader("\u25a3 DISPLAY", ySecDisplay);
+    }
+
+    private void drawSectionHeader(String label, int y) {
+        // Full-width horizontal rule
+        RenderUtils.drawRect(px + PAD, y + 10, px + W - PAD, y + 11, SECTION_LINE);
+        RenderUtils.drawRect(px + PAD, y + 11, px + W - PAD, y + 12, SECTION_LINE & 0x55FFFFFF);
+
+        // Label chip (small colored pill)
+        int lw = fontRendererObj.getStringWidth(label) + 8;
+        RenderUtils.drawRect(px + PAD, y, px + PAD + lw, y + 11, BG_PANEL); // erase rule under label
+        fontRendererObj.drawStringWithShadow(label, px + PAD + 4f, y + 1f, NEON_PURPLE);
+    }
+
+    // ── Color swatches ────────────────────────────────────────────────────────
+
+    private void drawColorSwatches() {
+        // Timer swatch — to the right of the slider columns
+        int swatchX = px + W - PAD - 24;
+        int timerSwatchY = ySecTimer + 14 + BTN_H + 10;
+        int alertSwatchY = ySecAlerts + 14 + BTN_H + 10;
+        int swatchH = (SL_H + 8) + SL_H;  // spans two slider rows
+
+        drawSwatch(previewTimer, swatchX, timerSwatchY, 22, swatchH);
+        drawSwatch(previewAlert, swatchX, alertSwatchY, 22, swatchH);
+    }
+
+    private void drawSwatch(int rgb, int x, int y, int w, int h) {
+        // Outer border glow
+        RenderUtils.drawRect(x - 2, y - 2, x + w + 2, y + h + 2, 0x30FFFFFF);
+        // Checkerboard hint (dark gray squares for transparency reference)
+        RenderUtils.drawRect(x, y,         x + w / 2, y + h / 2, 0xFF2A2A2A);
+        RenderUtils.drawRect(x + w / 2, y + h / 2, x + w, y + h, 0xFF2A2A2A);
+        RenderUtils.drawRect(x + w / 2, y,         x + w, y + h / 2, 0xFF222222);
+        RenderUtils.drawRect(x, y + h / 2, x + w / 2, y + h,         0xFF222222);
+        // Color fill (full alpha)
+        RenderUtils.drawRect(x, y, x + w, y + h, 0xFF000000 | rgb);
+        // Crisp 1px border
+        RenderUtils.drawBorder(x, y, x + w, y + h, 0xFF7722BB);
+    }
+
+    // ── Action button neon tint ───────────────────────────────────────────────
+
+    private void tintActionButton(int id, int neonColor, int mx, int my) {
+        for (Object o : buttonList) {
+            if (!(o instanceof GuiButton)) continue;
+            GuiButton btn = (GuiButton) o;
+            if (btn.id != id || btn instanceof ToggleButton) continue;
+
+            boolean hovered = mx >= btn.xPosition && my >= btn.yPosition
+                           && mx < btn.xPosition + btn.width
+                           && my < btn.yPosition + btn.height;
+
+            // Colored border
+            RenderUtils.drawBorder(btn.xPosition, btn.yPosition,
+                btn.xPosition + btn.width, btn.yPosition + btn.height, neonColor);
+            // Faint hover fill
+            if (hovered) {
+                RenderUtils.drawRect(btn.xPosition + 1, btn.yPosition + 1,
+                    btn.xPosition + btn.width - 1, btn.yPosition + btn.height - 1,
+                    neonColor & 0x33FFFFFF);
+            }
+            // Relabel with neon color
+            String lbl;
+            switch (id) {
+                case ID_SAVE:  lbl = "SAVE";        break;
+                case ID_RESET: lbl = "RESET STATS"; break;
+                default:       lbl = "CLOSE";       break;
+            }
+            int tx = btn.xPosition + btn.width  / 2 - fontRendererObj.getStringWidth(lbl) / 2;
+            int ty = btn.yPosition + btn.height / 2 - fontRendererObj.FONT_HEIGHT / 2;
+            fontRendererObj.drawStringWithShadow(lbl, tx, ty, neonColor);
         }
     }
 
+    // ── Mouse ─────────────────────────────────────────────────────────────────
+
     @Override
-    protected void mouseClickMove(int mouseX, int mouseY, int button, long timeSince) {
-        super.mouseClickMove(mouseX, mouseY, button, timeSince);
-        if (button == 0) {
-            for (MEFSlider sl : sliders) sl.mouseDragged(mouseX);
-        }
+    protected void mouseClicked(int mx, int my, int btn) throws IOException {
+        super.mouseClicked(mx, my, btn);
+        if (btn == 0) for (MEFSlider sl : sliders) sl.mousePressed(mx, my);
+    }
+
+    @Override
+    protected void mouseClickMove(int mx, int my, int btn, long timeSince) {
+        super.mouseClickMove(mx, my, btn, timeSince);
+        if (btn == 0) for (MEFSlider sl : sliders) sl.mouseDragged(mx);
         refreshColorPreviews();
     }
 
     @Override
-    protected void mouseReleased(int mouseX, int mouseY, int state) {
-        super.mouseReleased(mouseX, mouseY, state);
+    protected void mouseReleased(int mx, int my, int state) {
+        super.mouseReleased(mx, my, state);
         for (MEFSlider sl : sliders) sl.mouseReleased();
     }
 
@@ -192,13 +307,15 @@ public final class GuiEnoughFishing extends GuiScreen {
 
     @Override
     protected void actionPerformed(GuiButton btn) throws IOException {
+        Config cfg = EnoughFishing.INSTANCE.getConfig();
+
         if (btn instanceof ToggleButton) {
             ToggleButton tb = (ToggleButton) btn;
             tb.toggle();
-            Config cfg = EnoughFishing.INSTANCE.getConfig();
             switch (btn.id) {
                 case ID_TIMER_EN:  cfg.setTimerEnabled(tb.isEnabled());           break;
                 case ID_SHOW_MS:   cfg.setShowMilliseconds(tb.isEnabled());       break;
+                case ID_RAINBOW:   cfg.setRainbowMode(tb.isEnabled());            break;
                 case ID_ALERT_EN:  cfg.setParticleAlertsEnabled(tb.isEnabled());  break;
                 case ID_SOUND:     cfg.setSoundAlertEnabled(tb.isEnabled());      break;
                 case ID_FLASH:     cfg.setScreenFlashEnabled(tb.isEnabled());     break;
@@ -207,7 +324,8 @@ public final class GuiEnoughFishing extends GuiScreen {
         } else {
             switch (btn.id) {
                 case ID_SAVE:
-                    applyAndSave();
+                    applySliders();
+                    cfg.save();
                     mc.displayGuiScreen(null);
                     break;
                 case ID_RESET:
@@ -224,45 +342,20 @@ public final class GuiEnoughFishing extends GuiScreen {
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
-    private void applyAndSave() {
+    private void applySliders() {
         Config cfg = EnoughFishing.INSTANCE.getConfig();
         cfg.setTimerColor(ColorUtils.fromRGB(slTimerR.getValue(), slTimerG.getValue(), slTimerB.getValue()));
         cfg.setHudOpacity(slOpacity.getValue() / 255f);
         cfg.setAlertColor(ColorUtils.fromRGB(slAlertR.getValue(), slAlertG.getValue(), slAlertB.getValue()));
         cfg.setParticleSensitivity(slSensitivity.getValue() / 10f);
-        cfg.save();
     }
 
     private void refreshColorPreviews() {
-        previewTimerColor = ColorUtils.fromRGB(slTimerR.getValue(), slTimerG.getValue(), slTimerB.getValue());
-        previewAlertColor = ColorUtils.fromRGB(slAlertR.getValue(), slAlertG.getValue(), slAlertB.getValue());
+        previewTimer = ColorUtils.fromRGB(slTimerR.getValue(), slTimerG.getValue(), slTimerB.getValue());
+        previewAlert = ColorUtils.fromRGB(slAlertR.getValue(), slAlertG.getValue(), slAlertB.getValue());
     }
 
-    private void drawSection(String title, int y) {
-        RenderUtils.drawRect(px + PAD, y, px + W - PAD, y + 1, 0xFF3344AA);
-        drawString(fontRendererObj, "§7" + title, px + PAD, y - 9, 0xFFFFFF);
-    }
-
-    private void drawColorSwatch(int rgb, int x, int y, int size, int totalH) {
-        // Border
-        RenderUtils.drawRect(x - 1, y - 1, x + size + 1, y + totalH + 1, 0xFF555566);
-        // Checkerboard pattern to show through transparency
-        RenderUtils.drawRect(x, y,             x + size / 2, y + totalH / 2, 0xFF888888);
-        RenderUtils.drawRect(x + size / 2, y + totalH / 2, x + size, y + totalH, 0xFF888888);
-        // Color fill
-        RenderUtils.drawRect(x, y, x + size, y + totalH, 0xFF000000 | rgb);
-    }
-
-    /** Convenience: add a GuiButton and return it. */
     @SuppressWarnings("unchecked")
-    private <T extends GuiButton> T addBtn(T btn) {
-        buttonList.add(btn);
-        return btn;
-    }
-
-    /** Convenience: register a MEFSlider and return it. */
-    private MEFSlider addSlider(MEFSlider sl) {
-        sliders.add(sl);
-        return sl;
-    }
+    private <T extends GuiButton> T addBtn(T b) { buttonList.add(b); return b; }
+    private MEFSlider addSlider(MEFSlider s)     { sliders.add(s);   return s; }
 }

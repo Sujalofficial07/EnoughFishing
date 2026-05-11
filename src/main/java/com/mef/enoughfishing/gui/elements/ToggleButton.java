@@ -1,49 +1,74 @@
 package com.mef.enoughfishing.gui.elements;
 
+import com.mef.enoughfishing.utils.RenderUtils;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiButton;
 
 /**
- * A two-state toggle that extends {@link GuiButton} so it participates in
- * the normal {@code buttonList} / {@code actionPerformed} flow.
- * State is indicated by color-coded checkmarks without any texture lookups.
+ * Neon-styled toggle button.
+ * Enabled  → neon-green border + tinted green background, bright text.
+ * Disabled → dim purple border + dark background, muted text.
  */
 public final class ToggleButton extends GuiButton {
+
+    // Enabled palette
+    private static final int EN_BG     = 0xCC00280F;
+    private static final int EN_BORDER = 0xFF00FF88;
+    private static final int EN_TEXT   = 0xFF00FF88;
+    private static final int EN_HOVER  = 0x2200FF88;
+
+    // Disabled palette
+    private static final int DIS_BG     = 0xCC0A0018;
+    private static final int DIS_BORDER = 0xFF5B246E;
+    private static final int DIS_TEXT   = 0xFF7744AA;
+    private static final int DIS_HOVER  = 0x229D4EDD;
 
     private final String label;
     private boolean      enabled;
 
-    public ToggleButton(int id, int x, int y, int width, int height,
-                        String label, boolean initialState) {
-        super(id, x, y, width, height, "");
+    public ToggleButton(int id, int x, int y, int w, int h, String label, boolean init) {
+        super(id, x, y, w, h, "");
         this.label   = label;
-        this.enabled = initialState;
+        this.enabled = init;
         refreshText();
     }
 
-    /** Flips the toggle state and updates the display string. */
-    public void toggle() {
-        enabled = !enabled;
-        refreshText();
-    }
+    // ── State ─────────────────────────────────────────────────────────────────
 
-    public boolean isEnabled()       { return enabled; }
-    public void    setEnabled(boolean v) { enabled = v; refreshText(); }
+    public void    toggle()           { enabled = !enabled; refreshText(); }
+    public boolean isEnabled()        { return enabled; }
+    public void    setEnabled(boolean v){ enabled = v; refreshText(); }
 
     private void refreshText() {
-        displayString = (enabled ? "§a✔ " : "§7✘ ") + label;
+        // Color codes stripped in drawButton; kept for fallback rendering only
+        displayString = (enabled ? "§a✔ " : "§8✘ ") + label;
     }
 
-    // Override to tint the button background when active
+    // ── Draw ──────────────────────────────────────────────────────────────────
+
     @Override
-    public void drawButton(Minecraft mc, int mouseX, int mouseY) {
+    public void drawButton(Minecraft mc, int mx, int my) {
         if (!visible) return;
-        // Tint: green-ish when enabled, default gray otherwise
-        if (enabled) {
-            // Draw a subtle colored background before the default chrome
-            net.minecraft.client.renderer.GlStateManager.color(0.5f, 0.9f, 0.5f, 0.15f);
-        }
-        super.drawButton(mc, mouseX, mouseY);
-        net.minecraft.client.renderer.GlStateManager.color(1f, 1f, 1f, 1f);
+
+        boolean hovered = mx >= xPosition && my >= yPosition
+                       && mx < xPosition + width && my < yPosition + height;
+
+        int bg     = enabled ? EN_BG     : DIS_BG;
+        int border = enabled ? EN_BORDER : DIS_BORDER;
+        int text   = enabled ? EN_TEXT   : DIS_TEXT;
+        int hover  = enabled ? EN_HOVER  : DIS_HOVER;
+
+        // Fill
+        RenderUtils.drawRect(xPosition, yPosition, xPosition + width, yPosition + height, bg);
+        // Hover overlay
+        if (hovered) RenderUtils.drawRect(xPosition, yPosition, xPosition + width, yPosition + height, hover);
+        // Border (1-pixel outline)
+        RenderUtils.drawBorder(xPosition, yPosition, xPosition + width, yPosition + height, border);
+
+        // Label — draw without § codes
+        String plain = (enabled ? "\u2714 " : "\u2718 ") + label;
+        int tx = xPosition + width / 2 - mc.fontRendererObj.getStringWidth(plain) / 2;
+        int ty = yPosition + (height - mc.fontRendererObj.FONT_HEIGHT) / 2;
+        mc.fontRendererObj.drawStringWithShadow(plain, tx, ty, text);
     }
 }

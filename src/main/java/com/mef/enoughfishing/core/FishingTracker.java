@@ -4,147 +4,171 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.entity.projectile.EntityFishHook;
 
 /**
- * Singleton state machine that tracks the fishing session.
+ * Central state machine for one fishing session.
  *
- * <p>Thread-safety: fields written only on the main MC thread (via
- * addScheduledTask or ClientTickEvent). Reads from the render thread
- * are safe because Java guarantees visibility of long/int reads on x86,
- * and the worst case is a one-frame-stale value.</p>
+ * Alert model (no flickering):
+ *   APPROACHING — a particle entered the outer detection zone.
+ *                 State is held for HOLD_APPROACHING ms even if no new
+ *                 particles arrive, preventing rapid flicker as particles
+ *                 spawn/despawn.
+ *   ARRIVED     — a particle entered the inner (bite) zone.
+ *                 Takes priority over APPROACHING; also held for HOLD_ARRIVED.
  *
- * <p>GC optimisation: the {@link #timerBuilder} StringBuilder is pre-allocated
- * once and reused every frame so {@link #getFormattedTime(boolean)} never
- * allocates a new buffer in the render loop. The returned String is allocated,
- * but it is tiny and extremely short-lived — the JVM's escape-analysis will
- * stack-allocate it in practice.</p>
+ * Timer precision: 2 centisecond digits (e.g. "3.24s") via integer division.
+ * The pre-allocated StringBuilder means getFormattedTime() never allocates
+ * a buffer in the render loop — only the final tiny String is created.
  */
 public final class FishingTracker {
 
     public static final FishingTracker INSTANCE = new FishingTracker();
 
-    // Alert fade parameters (ms)
-    private static final long ALERT_FADE_IN   =  150L;
-    private static final long ALERT_HOLD      = 1200L;
-    private static final long ALERT_FADE_OUT  =  650L;
-    private static final long ALERT_TOTAL     = ALERT_FADE_IN + ALERT_HOLD + ALERT_FADE_OUT;
+    public enum AlertState { NONE, APPROACHING, ARRIVED }
+
+    // ── Alert hold durations (ms) ─────────────────────────────────────────────
+    private static final long HOLD_APPROACHING = 1500L;
+    private static final long HOLD_ARRIVED     =  900L;
+
+    // ── Screen-flash envelope (ms) ────────────────────────────────────────────
+    private static final long FLASH_FADE_IN  =  120L;
+    private static final long FLASH_HOLD     =  900L;
+    private static final long FLASH_FADE_OUT =  600L;
+    private static final long FLASH_TOTAL    = FLASH_FADE_IN + FLASH_HOLD + FLASH_FADE_OUT;
 
     // ── State ─────────────────────────────────────────────────────────────────
     private boolean isFishing;
-    private long    castTime       = -1L;  // System.currentTimeMillis() at cast
+    private long    castTime        = -1L;
     private int     castCount;
 
-    private boolean alertActive;
-    private long    alertStartTime = -1L;
+    private long    lastApproachMs  = -1L;
+    private long    lastArrivedMs   = -1L;
 
-    /** Pre-allocated buffer — NEVER use this outside {@link #getFormattedTime}. */
-    private final StringBuilder timerBuilder = new StringBuilder(16);
+    private boolean flashActive;
+    private long    flashStartMs    = -1L;
+
+    // Pre-allocated — never reallocated after construction.
+    private final StringBuilder timerBuf = new StringBuilder(12);
 
     private FishingTracker() {}
 
-    // ── Public API ────────────────────────────────────────────────────────────
+    // ── Session events ────────────────────────────────────────────────────────
 
-    /** Called when a new bobber enters the world. */
     public void onCast() {
-        castTime   = System.currentTimeMillis();
-        isFishing  = true;
+        castTime        = System.currentTimeMillis();
+        isFishing       = true;
         castCount++;
-        alertActive = false;
+        lastApproachMs  = -1L;
+        lastArrivedMs   = -1L;
+        flashActive     = false;
     }
 
-    /** Called when the bobber is removed (reel-in or server cancellation). */
     public void onReel() {
-        isFishing  = false;
-        castTime   = -1L;
-        alertActive = false;
+        isFishing       = false;
+        castTime        = -1L;
+        lastApproachMs  = -1L;
+        lastArrivedMs   = -1L;
+        flashActive     = false;
     }
 
-    /**
-     * Called (on the main thread) when a WATER_WAKE particle is detected near
-     * the bobber — signals a fish is about to bite.
-     */
-    public void onParticleDetected() {
+    // ── Alert events (main thread only) ──────────────────────────────────────
+
+    /** Particle entered outer zone → start / refresh APPROACHING hold. */
+    public void onApproachingDetected() {
         if (!isFishing) return;
-        alertActive    = true;
-        alertStartTime = System.currentTimeMillis();
+        lastApproachMs = System.currentTimeMillis();
     }
 
-    /** Resets session statistics. */
-    public void resetStats() {
-        castCount   = 0;
-        isFishing   = false;
-        castTime    = -1L;
-        alertActive = false;
+    /** Particle entered inner zone → ARRIVED takes over, triggers screen flash. */
+    public void onArrivedDetected() {
+        if (!isFishing) return;
+        long now       = System.currentTimeMillis();
+        lastArrivedMs  = now;
+        lastApproachMs = now;   // also refresh APPROACHING
+        flashActive    = true;
+        flashStartMs   = now;
     }
 
     // ── Tick ─────────────────────────────────────────────────────────────────
 
-    /**
-     * Must be called every client tick (main thread only).
-     * Detects cast/reel transitions by watching {@code thePlayer.fishEntity}.
-     */
     public void tick() {
         Minecraft mc = Minecraft.getMinecraft();
         if (mc.thePlayer == null) return;
 
         EntityFishHook hook = mc.thePlayer.fishEntity;
-
-        if (hook == null && isFishing)  { onReel(); }
+        if      (hook == null &&  isFishing) { onReel(); }
         else if (hook != null && !isFishing) { onCast(); }
 
-        // Expire the alert
-        if (alertActive && System.currentTimeMillis() - alertStartTime >= ALERT_TOTAL) {
-            alertActive = false;
+        if (flashActive && System.currentTimeMillis() - flashStartMs >= FLASH_TOTAL) {
+            flashActive = false;
         }
     }
 
     // ── Queries ───────────────────────────────────────────────────────────────
 
-    /**
-     * Returns a formatted timer string, reusing the internal StringBuilder.
-     * Format: [M:]SS.MMMsec  or  [M:]SSsec   depending on {@code showMs}.
-     */
-    public String getFormattedTime(boolean showMs) {
-        if (!isFishing || castTime < 0L) return "0.000s";
+    public AlertState getAlertState() {
+        if (!isFishing) return AlertState.NONE;
+        long now = System.currentTimeMillis();
+        if (lastArrivedMs  > 0 && now - lastArrivedMs  < HOLD_ARRIVED)     return AlertState.ARRIVED;
+        if (lastApproachMs > 0 && now - lastApproachMs < HOLD_APPROACHING) return AlertState.APPROACHING;
+        return AlertState.NONE;
+    }
 
+    /**
+     * Smooth sinusoidal pulse factor in [0.65 – 1.0] keyed to wall-clock time.
+     * Used to animate the floating bobber label — no frame-count dependency,
+     * so it never stutters during server lag.
+     */
+    public float getAlertPulse() {
+        long now = System.currentTimeMillis();
+        switch (getAlertState()) {
+            case APPROACHING: return 0.78f + 0.22f * (float) Math.sin(now * 0.004);
+            case ARRIVED:     return 0.65f + 0.35f * (float) Math.abs(Math.sin(now * 0.010));
+            default:          return 1.0f;
+        }
+    }
+
+    /** [0,1] alpha for the screen-flash overlay (fade-in → hold → fade-out). */
+    public float getFlashAlpha() {
+        if (!flashActive) return 0f;
+        long e = System.currentTimeMillis() - flashStartMs;
+        if (e >= FLASH_TOTAL)     return 0f;
+        if (e < FLASH_FADE_IN)    return e / (float) FLASH_FADE_IN;
+        if (e < FLASH_FADE_IN + FLASH_HOLD) return 1f;
+        return 1f - (e - FLASH_FADE_IN - FLASH_HOLD) / (float) FLASH_FADE_OUT;
+    }
+
+    /**
+     * 2-centisecond-precision timer string.  Format: [M:]SS.CCs
+     * Examples: "3.24s"  "1:02.07s"
+     * Zero allocations in the buffer itself; only the final toString() allocates.
+     */
+    public String getFormattedTime(boolean showCentis) {
+        if (!isFishing || castTime < 0L) return "0.00s";
         long elapsed = System.currentTimeMillis() - castTime;
         long mins    = elapsed / 60_000L;
         long secs    = (elapsed % 60_000L) / 1_000L;
-        long millis  = elapsed % 1_000L;
+        long centis  = (elapsed % 1_000L)  / 10L;   // ← 2 digits only
 
-        timerBuilder.setLength(0);
-
+        timerBuf.setLength(0);
         if (mins > 0) {
-            timerBuilder.append(mins).append(':');
-            if (secs < 10) timerBuilder.append('0');
+            timerBuf.append(mins).append(':');
+            if (secs < 10) timerBuf.append('0');
         }
-        timerBuilder.append(secs);
-
-        if (showMs) {
-            timerBuilder.append('.');
-            if (millis < 100) timerBuilder.append('0');
-            if (millis < 10)  timerBuilder.append('0');
-            timerBuilder.append(millis);
+        timerBuf.append(secs);
+        if (showCentis) {
+            timerBuf.append('.');
+            if (centis < 10) timerBuf.append('0');
+            timerBuf.append(centis);
         }
-        timerBuilder.append('s');
-
-        return timerBuilder.toString();
+        timerBuf.append('s');
+        return timerBuf.toString();
     }
 
-    /**
-     * Returns a smooth alpha in [0, 1] for the screen-flash overlay.
-     * Follows a fade-in → hold → fade-out envelope.
-     */
-    public float getAlertAlpha() {
-        if (!alertActive) return 0f;
-        long elapsed = System.currentTimeMillis() - alertStartTime;
-        if (elapsed < ALERT_FADE_IN)
-            return elapsed / (float) ALERT_FADE_IN;
-        if (elapsed < ALERT_FADE_IN + ALERT_HOLD)
-            return 1f;
-        float fadeProgress = (elapsed - ALERT_FADE_IN - ALERT_HOLD) / (float) ALERT_FADE_OUT;
-        return Math.max(0f, 1f - fadeProgress);
+    public void resetStats() {
+        castCount = 0; isFishing = false; castTime = -1L;
+        lastApproachMs = -1L; lastArrivedMs = -1L; flashActive = false;
     }
 
-    public boolean isFishing()     { return isFishing;   }
-    public int     getCastCount()  { return castCount;   }
-    public boolean isAlertActive() { return alertActive; }
+    public boolean isFishing()     { return isFishing;  }
+    public int     getCastCount()  { return castCount;  }
+    public boolean isFlashActive() { return flashActive; }
 }

@@ -4,21 +4,18 @@ import com.mef.enoughfishing.utils.RenderUtils;
 import net.minecraft.client.gui.FontRenderer;
 
 /**
- * Horizontal drag-slider with a centered value readout.
- *
- * <p>Not a {@link net.minecraft.client.gui.GuiButton} subclass — mouse
- * events are delegated from the parent {@link net.minecraft.client.gui.GuiScreen}
- * manually, which gives us full control over the drag behaviour.</p>
- *
- * <p>No allocations during draw — only primitive arithmetic.</p>
+ * Horizontal drag-slider with neon green/purple theme.
+ * No allocations during draw — purely primitive arithmetic.
  */
 public final class MEFSlider {
 
-    private static final int TRACK_COLOR  = 0xFF444455;
-    private static final int FILL_COLOR   = 0xFF2266BB;
-    private static final int KNOB_IDLE    = 0xFF9999AA;
-    private static final int KNOB_DRAG    = 0xFFCCCCDD;
-    private static final int TEXT_COLOR   = 0xFFCCCCCC;
+    // ── Palette ───────────────────────────────────────────────────────────────
+    private static final int TRACK_BG    = 0xFF0A0018;
+    private static final int TRACK_FILL  = 0xFF00BB66;   // neon green fill
+    private static final int TRACK_EDGE  = 0xFF3D1270;   // purple track border
+    private static final int KNOB_IDLE   = 0xFF9D4EDD;   // purple knob
+    private static final int KNOB_DRAG   = 0xFF00FF88;   // neon green when dragging
+    private static final int TEXT_COL    = 0xFFCCFFE8;   // soft mint label
 
     public final int x, y, width, height;
     private final String label;
@@ -29,69 +26,68 @@ public final class MEFSlider {
 
     public MEFSlider(int x, int y, int width, int height,
                      String label, int value, int min, int max) {
-        this.x      = x;      this.y      = y;
-        this.width  = width;  this.height = height;
-        this.label  = label;
-        this.min    = min;    this.max    = max;
-        this.value  = clamp(value);
+        this.x = x;  this.y = y;
+        this.width = width;  this.height = height;
+        this.label = label;
+        this.min = min;  this.max = max;
+        this.value = clamp(value);
     }
 
-    // ── Rendering ─────────────────────────────────────────────────────────────
+    // ── Draw ──────────────────────────────────────────────────────────────────
 
     public void draw(FontRenderer fr, int mouseX, int mouseY) {
-        // Track
-        RenderUtils.drawRect(x, y + height / 2 - 1, x + width, y + height / 2 + 1, TRACK_COLOR);
+        int trackY1 = y + height / 2 - 2;
+        int trackY2 = y + height / 2 + 2;
+
+        // Track background + edge border
+        RenderUtils.drawRect(x,     trackY1, x + width, trackY2, TRACK_BG);
+        RenderUtils.drawBorder(x,   trackY1, x + width, trackY2, TRACK_EDGE);
 
         // Filled portion
         float pct      = pct();
         int   fillEdge = x + (int)(width * pct);
-        if (fillEdge > x) {
-            RenderUtils.drawRect(x, y + height / 2 - 1, fillEdge, y + height / 2 + 1, FILL_COLOR);
+        if (fillEdge > x + 1) {
+            RenderUtils.drawRect(x + 1, trackY1 + 1, fillEdge, trackY2 - 1, TRACK_FILL);
         }
 
-        // Knob
-        int knobCx = x + (int)(width * pct);
-        RenderUtils.drawRect(knobCx - 3, y, knobCx + 3, y + height, dragging ? KNOB_DRAG : KNOB_IDLE);
+        // Knob — taller than the track for a pill feel
+        int kx = x + (int)(width * pct);
+        int kColor = dragging ? KNOB_DRAG : KNOB_IDLE;
+        RenderUtils.drawRect(kx - 4, y,              kx + 4, y + height,     kColor & 0x66FFFFFF);
+        RenderUtils.drawRect(kx - 3, y + 1,          kx + 3, y + height - 1, kColor);
 
-        // Label : value  (drawn to the right of the track)
-        String text  = label + ": " + value;
-        int    textX = x + width + 6;
-        fr.drawStringWithShadow(text, textX, y + (height - fr.FONT_HEIGHT) / 2, TEXT_COLOR);
+        // Label + value to the right
+        String display = label + ": " + value;
+        fr.drawStringWithShadow(display, x + width + 7, y + (height - fr.FONT_HEIGHT) / 2, TEXT_COL);
     }
 
     // ── Input ─────────────────────────────────────────────────────────────────
 
-    /** @return true if this slider consumed the click. */
-    public boolean mousePressed(int mouseX, int mouseY) {
-        if (mouseX >= x && mouseX <= x + width && mouseY >= y - 2 && mouseY <= y + height + 2) {
+    public boolean mousePressed(int mx, int my) {
+        if (mx >= x && mx <= x + width && my >= y - 2 && my <= y + height + 2) {
             dragging = true;
-            updateFromMouse(mouseX);
+            updateFromMouse(mx);
             return true;
         }
         return false;
     }
 
-    public void mouseDragged(int mouseX) {
-        if (dragging) updateFromMouse(mouseX);
-    }
+    public void mouseDragged(int mx) { if (dragging) updateFromMouse(mx); }
+    public void mouseReleased()      { dragging = false; }
 
-    public void mouseReleased() {
-        dragging = false;
-    }
-
-    // ── Value access ──────────────────────────────────────────────────────────
+    // ── Value ─────────────────────────────────────────────────────────────────
 
     public int  getValue()     { return value; }
     public void setValue(int v){ value = clamp(v); }
 
     // ── Internals ─────────────────────────────────────────────────────────────
 
-    private void updateFromMouse(int mouseX) {
-        float raw = (mouseX - x) / (float) width;
+    private void updateFromMouse(int mx) {
+        float raw = (mx - x) / (float) width;
         value = min + Math.round(clamp01(raw) * (max - min));
     }
 
-    private float   pct()          { return (float)(value - min) / (max - min); }
-    private int     clamp(int v)   { return Math.max(min, Math.min(max, v)); }
-    private float   clamp01(float f){ return Math.max(0f, Math.min(1f, f)); }
+    private float pct()            { return (float)(value - min) / (max - min); }
+    private int   clamp(int v)     { return Math.max(min, Math.min(max, v)); }
+    private float clamp01(float f) { return Math.max(0f, Math.min(1f, f)); }
 }

@@ -7,25 +7,15 @@ import net.minecraft.client.renderer.vertex.DefaultVertexFormats;
 import org.lwjgl.opengl.GL11;
 
 /**
- * Thin GL rendering utilities.
- *
- * <p><b>GC policy:</b> no heap allocations. {@link Tessellator} is a singleton;
- * {@link WorldRenderer} is obtained from it. All color components are
- * computed inline from packed ints using bit-shifts — zero boxing.</p>
- *
- * <p>All methods leave GL state equivalent to what they found it in
- * (blend disabled, texture enabled, color reset to white).</p>
+ * Stateless GL drawing utilities. Zero heap allocations. All methods restore
+ * GL state to "blend off, texture on, color white" on exit.
  */
 public final class RenderUtils {
 
     private RenderUtils() {}
 
-    // ── Filled rectangle ──────────────────────────────────────────────────────
+    // ── Core rect ─────────────────────────────────────────────────────────────
 
-    /**
-     * Draws a solid ARGB rectangle.
-     * @param color packed ARGB (high byte = alpha)
-     */
     public static void drawRect(double x1, double y1, double x2, double y2, int color) {
         float a = ((color >> 24) & 0xFF) / 255f;
         float r = ((color >> 16) & 0xFF) / 255f;
@@ -37,8 +27,8 @@ public final class RenderUtils {
         GlStateManager.disableTexture2D();
         GlStateManager.color(r, g, b, a);
 
-        Tessellator    tess = Tessellator.getInstance();
-        WorldRenderer  wr   = tess.getWorldRenderer();
+        Tessellator   tess = Tessellator.getInstance();
+        WorldRenderer wr   = tess.getWorldRenderer();
         wr.begin(GL11.GL_QUADS, DefaultVertexFormats.POSITION);
         wr.pos(x1, y2, 0).endVertex();
         wr.pos(x2, y2, 0).endVertex();
@@ -51,13 +41,39 @@ public final class RenderUtils {
         GlStateManager.color(1f, 1f, 1f, 1f);
     }
 
-    // ── Fullscreen overlay ────────────────────────────────────────────────────
+    // ── Neon glow border ──────────────────────────────────────────────────────
 
     /**
-     * Covers the entire 2-D HUD canvas with a translucent color.
-     * Intended for the screen-flash alert.
+     * Draws a multi-layer glow border around a rectangle to simulate bloom.
+     *
+     * @param glowColor packed RGB color (no alpha — alpha is computed per layer)
      */
-    public static void drawFullscreenRect(int screenW, int screenH, int r, int g, int b, int a) {
+    public static void drawGlowBorder(int x, int y, int x2, int y2, int glowColor) {
+        int rgb = glowColor & 0x00FFFFFF;
+        // Layer 3 — outermost, very faint
+        drawRect(x - 3, y - 3, x2 + 3, y2 + 3, 0x18000000 | rgb);
+        // Layer 2 — mid glow
+        drawRect(x - 2, y - 2, x2 + 2, y2 + 2, 0x35000000 | rgb);
+        // Layer 1 — crisp inner border
+        drawRect(x - 1, y - 1, x2 + 1, y2 + 1, 0x70000000 | rgb);
+        // Solid 1px border
+        drawRect(x,     y,     x2,     y2,     0xFF000000 | rgb);
+    }
+
+    /**
+     * Draws only the 1-pixel outline of a rectangle (4 edge rects).
+     * Cheaper than drawGlowBorder when bloom is not needed.
+     */
+    public static void drawBorder(int x, int y, int x2, int y2, int color) {
+        drawRect(x,      y,      x2,     y  + 1, color); // top
+        drawRect(x,      y2 - 1, x2,     y2,     color); // bottom
+        drawRect(x,      y,      x  + 1, y2,     color); // left
+        drawRect(x2 - 1, y,      x2,     y2,     color); // right
+    }
+
+    // ── Fullscreen overlay ────────────────────────────────────────────────────
+
+    public static void drawFullscreenRect(int w, int h, int r, int g, int b, int a) {
         GlStateManager.enableBlend();
         GlStateManager.blendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
         GlStateManager.disableTexture2D();
@@ -66,10 +82,10 @@ public final class RenderUtils {
         Tessellator   tess = Tessellator.getInstance();
         WorldRenderer wr   = tess.getWorldRenderer();
         wr.begin(GL11.GL_QUADS, DefaultVertexFormats.POSITION);
-        wr.pos(0,       screenH, 0).endVertex();
-        wr.pos(screenW, screenH, 0).endVertex();
-        wr.pos(screenW, 0,       0).endVertex();
-        wr.pos(0,       0,       0).endVertex();
+        wr.pos(0, h, 0).endVertex();
+        wr.pos(w, h, 0).endVertex();
+        wr.pos(w, 0, 0).endVertex();
+        wr.pos(0, 0, 0).endVertex();
         tess.draw();
 
         GlStateManager.enableTexture2D();
